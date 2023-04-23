@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="css/style.css" rel="stylesheet" />
+  <title>Google Maps API</title>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <div id="menu">
+    <button onclick="findPath()">Знайти шлях</button>
+    <button onclick="vertexClear()">Скинути обрані позначки</button>
+    <p id="dist"></p>
+  </div>
+
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD3kd2ZK7wAlJ_jATVBYQ3JjluLvQ_fWkY&callback=initMap"
+    async defer></script>
+
+  <script>
+
+    var selectedVertex = [];
+    var map;
+
+    async function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 35.7128, lng: 105.0060 },
+        zoom: 6
+      });
+
+      var geoCenterJSONString = await getGeoCenterJSONString();
+      map.data.addGeoJson(geoCenterJSONString);
+
+      fillMarkers();
+
+      map.data.addListener('click', function (event) {
+        if (event.feature.getGeometry().getType() === 'Point') {
+          selectedVertex.push(parseInt(event.feature.getProperty('id')));
+          var icon = {
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            fillColor: 'red',
+            fillOpacity: 1,
+            strokeWeight: 0,
+            scale: 6
+          };
+          var feature = event.feature;
+          map.data.overrideStyle(feature, { icon: icon });
+        } 
+      });
+    }
+
+    async function buildPath() {
+      var geoPathJSONString = await getGeoPathJSONString();
+      map.data.forEach(function (feature) {
+        if (feature.getGeometry().getType() === 'MultiLineString') {
+          map.data.remove(feature);
+        }
+      });
+      map.data.addGeoJson(geoPathJSONString);
+    }
+
+    async function fillMarkers() {
+      map.data.forEach(function (feature) {
+        if (feature.getGeometry().getType() === 'Point') {
+          var icon = {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: 'blue',
+            fillOpacity: 1,
+            strokeWeight: 0,
+            scale: 6
+          };
+          map.data.overrideStyle(feature, { icon: icon });
+        }
+      });
+    }
+
+    async function getGeoPathJSONString() {
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/path/jsonstring", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const geojsonString = await response.json();
+        return geojsonString;
+      }
+    }
+
+    async function getGeoCenterJSONString() {
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/center/jsonstring", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const geojsonString = await response.json();
+        return geojsonString;
+      }
+    }
+
+    async function findPath() {
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/findpath/" + selectedVertex, {
+        method: "PUT",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const success = await response;
+        findDistance();
+        buildPath();
+        return true;
+      }
+    }
+
+    async function vertexClear() {
+      selectedVertex = [];
+      fillMarkers();
+    }
+
+    async function findDistance() {
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/findpath/distance", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const data = await response.json();
+        document.getElementById("dist").textContent = 'Відстань: ' + data.distance.toFixed(2) + 'км';
+        return true;
+      } else {
+        document.getElementById("dist").textContent = 'Шлях знайти неможливо';
+        return false;
+      }
+    }
+
+  </script>
+
+</body>
+
+</html>
