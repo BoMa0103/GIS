@@ -75,7 +75,80 @@ async function getGeoCenterJSONString() {
   return geoCenterJSONString;
 }
 
-async function findPath(vertexIdList) {
+async function getGeoMapJSONString() {
+  const client = new Client(connectionString);
+
+  client.connect();
+
+  const queryPromise = util.promisify(client.query).bind(client);
+  const result = await queryPromise('SELECT ST_AsGeoJSON(geog) as json, * FROM map');
+
+  // Створити GeoJSON-файл з потрібною структурою
+  const geojson = {
+    type: 'FeatureCollection',
+    features: []
+  };
+  result.rows.forEach(row => {
+    if (row.json != null) {
+      const feature = {
+        type: 'Feature',
+        geometry: {
+          type: "MultiPolygon",
+          coordinates: (JSON.parse(row.json)).coordinates
+        },
+        properties: {
+          id: row.gid
+        }
+      };
+      geojson.features.push(feature);
+    }
+  });
+
+  const geoMapJSONString = JSON.stringify(geojson);
+
+  client.end();
+
+  return geoMapJSONString;
+}
+
+async function getGeoCellsJSONString() {
+  const client = new Client(connectionString);
+
+  client.connect();
+
+  const queryPromise = util.promisify(client.query).bind(client);
+  const result = await queryPromise('SELECT ST_AsGeoJSON(geom) as json, * FROM cells');
+
+  // Створити GeoJSON-файл з потрібною структурою
+  const geojson = {
+    type: 'FeatureCollection',
+    features: []
+  };
+  result.rows.forEach(row => {
+    if (row.json != null) {
+      const feature = {
+        type: 'Feature',
+        geometry: {
+          type: "Polygon",
+          coordinates: (JSON.parse(row.json)).coordinates
+        },
+        properties: {
+          id: row.id, 
+          info: row.cell_info
+        }
+      };
+      geojson.features.push(feature);
+    }
+  });
+
+  const geoCellsJSONString = JSON.stringify(geojson);
+
+  client.end();
+
+  return geoCellsJSONString;
+}
+
+async function findPath(vertexIdList){
   const client = new Client(connectionString);
 
   client.connect();
@@ -92,6 +165,20 @@ async function findPath(vertexIdList) {
   if (result.rowCount == 0) {
     return false;
   }
+
+  return true;
+}
+
+async function findCells(region, cellSize) {
+  const client = new Client(connectionString);
+
+  client.connect();
+
+  const queryPromise = util.promisify(client.query).bind(client);
+  await queryPromise('TRUNCATE TABLE cells;');
+  await queryPromise('INSERT INTO cells (geom, cell_info) SELECT cell_geom, cell_info FROM cell_polygon_geom((SELECT geog FROM map WHERE gid = $1), \'info\', $2)', [region, cellSize]);
+
+  client.end();
 
   return true;
 }
@@ -115,4 +202,4 @@ async function getPathDistance() {
 }
 
 
-module.exports = { getGeoPathJsonString, getGeoCenterJSONString, findPath, getPathDistance };
+module.exports = { getGeoPathJsonString, getGeoCenterJSONString, findPath, findCells, getPathDistance, getGeoMapJSONString, getGeoCellsJSONString };

@@ -14,6 +14,15 @@
     <button onclick="findPath()">Знайти шлях</button>
     <button onclick="vertexClear()">Скинути обрані позначки</button>
     <p id="dist"></p>
+    <p id="cellSizeLabel" style="display: none; margin-top: 20%;">Задайте розмір комірки:</p>
+    <select id="cellSize" style="display: none;">
+      <option value="0.8">80km</option>
+      <option value="0.1">10km</option>
+      <option value="0.01">1km</option>
+      <option value="0.005">500m</option>
+    </select>
+    <button id="cellButton" onclick="findCells()" style="display: none;">Побудувати сітку</button>
+    <button onclick="cellsClear()">Скинути сітки</button>
   </div>
 
   <script src="https://maps.googleapis.com/maps/api/js?key=API_KEY&callback=initMap"
@@ -23,6 +32,8 @@
 
     var selectedVertex = [];
     var map;
+    var selectedRegion;
+    var cellSize;
 
     async function initMap() {
       map = new google.maps.Map(document.getElementById('map'), {
@@ -31,9 +42,12 @@
       });
 
       var geoCenterJSONString = await getGeoCenterJSONString();
+      var geoMapJSONString = await getGeoMapJSONString();
       map.data.addGeoJson(geoCenterJSONString);
+      map.data.addGeoJson(geoMapJSONString);
 
       fillMarkers();
+      fillRegions();
 
       map.data.addListener('click', function (event) {
         if (event.feature.getGeometry().getType() === 'Point') {
@@ -45,9 +59,32 @@
             strokeWeight: 0,
             scale: 6
           };
-          var feature = event.feature;
-          map.data.overrideStyle(feature, { icon: icon });
-        } 
+          map.data.overrideStyle(event.feature, { icon: icon });
+        }
+      });
+
+      map.data.addListener('click', function (event) {
+        if (event.feature.getGeometry().getType() === 'MultiPolygon') {
+          if (selectedRegion == parseInt(event.feature.getProperty('id'))) {
+            selectedRegion = -1;
+            regionsClear();
+            return;
+          }
+          selectedRegion = parseInt(event.feature.getProperty('id'));
+          var style = {
+            fillColor: 'yellow',
+            strokeColor: 'blue',
+            strokeWeight: 5,
+            zIndex: 1,
+            fillOpacity: 0.1
+          };
+          regionsClear();
+          map.data.overrideStyle(event.feature, style);
+
+          document.getElementById("cellSizeLabel").style.display = "block";
+          document.getElementById("cellButton").style.display = "block";
+          document.getElementById("cellSize").style.display = "block";
+        }
       });
     }
 
@@ -61,6 +98,35 @@
       map.data.addGeoJson(geoPathJSONString);
     }
 
+    async function buildCells() {
+      var geoCellsJSONString = await getGeoCellsJSONString();
+      map.data.addGeoJson(geoCellsJSONString);
+      map.data.forEach(function (feature) {
+        if (feature.getGeometry().getType() === 'Polygon') {
+          var style;
+          console.log(feature.getProperty('info'));
+          if (feature.getProperty('info') === 'road') {
+            style = {
+              fillColor: 'red',
+              strokeColor: 'black',
+              strokeWeight: 1,
+              zIndex: -1,
+              fillOpacity: 0.4
+            };
+          } else {
+            style = {
+              fillColor: 'gray',
+              strokeColor: 'black',
+              strokeWeight: 1,
+              zIndex: -2,
+              fillOpacity: 0.2
+            };
+          }
+          map.data.overrideStyle(feature, style);
+        }
+      });
+    }
+
     async function fillMarkers() {
       map.data.forEach(function (feature) {
         if (feature.getGeometry().getType() === 'Point') {
@@ -72,6 +138,21 @@
             scale: 6
           };
           map.data.overrideStyle(feature, { icon: icon });
+        }
+      });
+    }
+
+    async function fillRegions() {
+      map.data.forEach(function (feature) {
+        if (feature.getGeometry().getType() === 'MultiPolygon') {
+          var style = {
+            fillColor: 'gray',
+            strokeColor: 'black',
+            strokeWeight: 2,
+            zIndex: 0,
+            fillOpacity: 0.1
+          };
+          map.data.overrideStyle(feature, style);
         }
       });
     }
@@ -104,6 +185,34 @@
       }
     }
 
+    async function getGeoMapJSONString() {
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/map/jsonstring", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const geojsonString = await response.json();
+        return geojsonString;
+      }
+    }
+
+    async function getGeoCellsJSONString() {
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/cells/jsonstring", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const geojsonString = await response.json();
+        return geojsonString;
+      }
+    }
+
     async function findPath() {
       // отправляет запрос и получаем ответ
       const response = await fetch("/api/findpath/" + selectedVertex, {
@@ -120,9 +229,40 @@
       }
     }
 
+    async function findCells() {
+      cellSize = Number(document.getElementById("cellSize").value);
+      // отправляет запрос и получаем ответ
+      const response = await fetch("/api/findcells/" + selectedRegion + "/" + cellSize, {
+        method: "PUT",
+        headers: { "Accept": "application/json" }
+      });
+      // если запрос прошел нормально
+      if (response.ok === true) {
+        // получаем данные
+        const success = await response;
+        buildCells();
+        return true;
+      }
+    }
+
     async function vertexClear() {
       selectedVertex = [];
       fillMarkers();
+    }
+
+    async function cellsClear() {
+      map.data.forEach(function (feature) {
+        if (feature.getGeometry().getType() === 'Polygon') {
+          map.data.remove(feature);
+        }
+      });
+    }
+
+    async function regionsClear() {
+      fillRegions();
+      document.getElementById("cellSizeLabel").style.display = "none";
+      document.getElementById("cellButton").style.display = "none";
+      document.getElementById("cellSize").style.display = "none";
     }
 
     async function findDistance() {
